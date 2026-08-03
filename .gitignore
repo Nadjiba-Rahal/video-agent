@@ -1,0 +1,16 @@
+# secrets
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# generated content
+outputs/videos/*.mp4
+logs/*.log
+
+# keep the folders in git even though their contents are ignored
+!outputs/videos/.gitkeep
+!logs/.gitkeep
