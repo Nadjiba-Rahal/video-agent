@@ -32,6 +32,7 @@ class Settings:
     # Video generation service ("agnes")
     agnes_api_url: str = os.getenv("AGNES_API_URL", "")
     agnes_api_key: str = os.getenv("AGNES_API_KEY", "")
+    agnes_model: str = os.getenv("AGNES_MODEL", "agnes-video-v2.0")
 
     # Polling behaviour
     poll_interval_seconds: int = _get_int("POLL_INTERVAL_SECONDS", 3)

@@ -7,10 +7,17 @@ add or remove a tool.
 import importlib.resources
 
 import yaml
-from smolagents import CodeAgent
+
+try:
+    from smolagents import CodeAgent
+except ImportError as exc:  # pragma: no cover - exercised only when dependency is missing
+    raise RuntimeError(
+        "smolagents is not installed. Install the project dependencies with 'pip install -r requirements.txt'."
+    ) from exc
 
 from agent.model import get_model
 from agent.prompts import CUSTOM_INSTRUCTIONS
+from config.settings import settings
 from tools.search_tool import search_web
 from tools.time_tool import get_current_time
 from tools.video_tool import generate_video
@@ -38,10 +45,10 @@ def build_agent() -> CodeAgent:
         tools=[get_current_time, search_web, generate_video],
         model=model,
         prompt_templates=_build_prompt_templates(),
-        # planning_interval=1 forces the agent to write an explicit plan
-        # BEFORE its first action, every run. With a higher interval the
-        # planning step never fired on short video tasks (they finish in
-        # under 3 steps), so the "planner" was invisible in practice.
-        planning_interval=1,
+        planning_interval=None,
+        # Default sandbox timeout is 30s - too short for a blocking
+        # generate_video() call that polls until the video finishes
+        # rendering. Raise it to cover a full render + poll cycle.
+        executor_kwargs={"timeout_seconds": settings.poll_timeout_seconds + 30},
     )
     return agent

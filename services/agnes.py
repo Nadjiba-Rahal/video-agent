@@ -43,17 +43,40 @@ def _raise_for_status(response: requests.Response) -> None:
     if response.status_code >= 400:
         raise AgnesError(f"Video API error {response.status_code}: {response.text[:300]}")
 
-
-def submit_video(prompt: str) -> str:
-    """
-    Submits a video generation job.
-    Returns a task_id that can be checked later with get_status().
-    """
+def submit_video(
+    prompt: str,
+    negative_prompt: str = (
+        "blurry, low quality, distorted, watermark, text, glitch, "
+        "warped face, extra limbs, morphing, flickering, jump cuts, "
+        "objects appearing or disappearing, inconsistent details, "
+        "unnatural movement, jittery motion"
+    ),
+    num_frames: int = 121,
+    frame_rate: int = 24,
+    width: int = 1152,
+    height: int = 768,
+    num_inference_steps: int = 40,
+    seed: int | None = None,
+) -> str:
+    """Submits a video generation job. Returns a video_id for status checks."""
     log.info("Submitting video job: %r", prompt[:80])
+    payload = {
+        "model": settings.agnes_model,
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "num_frames": num_frames,
+        "frame_rate": frame_rate,
+        "width": width,
+        "height": height,
+        "num_inference_steps": num_inference_steps,
+    }
+    if seed is not None:
+        payload["seed"] = seed
+
     try:
         response = requests.post(
             f"{settings.agnes_api_url}/v1/videos",
-            json={"prompt": prompt},
+            json=payload,
             headers=_headers(),
             timeout=_TIMEOUT,
         )
@@ -61,21 +84,19 @@ def submit_video(prompt: str) -> str:
         raise AgnesError(f"Could not reach video API: {exc}") from exc
 
     _raise_for_status(response)
-    task_id = response.json()["task_id"]
-    log.info("Video job submitted, task_id=%s", task_id)
-    return task_id
+    video_id = response.json()["video_id"]
+    log.info("Video job submitted, video_id=%s", video_id)
+    return video_id
 
-
-def get_status(task_id: str) -> dict:
+def get_status(video_id: str) -> dict:
     """
-    Checks the status of a video job.
-    Expected return shape from the provider (adapt to the real API):
-        {"status": "pending" | "processing" | "completed" | "failed",
-         "video_url": "https://..." (only present when completed)}
+    Checks status. Returns a dict normalized to always have "status"
+    and, once completed, "video_url".
     """
     try:
         response = requests.get(
-            f"{settings.agnes_api_url}/v1/videos/{task_id}",
+            f"{settings.agnes_api_url}/agnesapi",
+            params={"video_id": video_id},
             headers=_headers(),
             timeout=_TIMEOUT,
         )
@@ -83,8 +104,23 @@ def get_status(task_id: str) -> dict:
         raise AgnesError(f"Could not reach video API: {exc}") from exc
 
     _raise_for_status(response)
-    return response.json()
+    data = response.json()
+    status = data.get("status")
+    result = {"status": status}
 
+    if status == "completed":
+        metadata = data.get("metadata") or {}
+        video_url = metadata.get("url") or data.get("url")
+        if not video_url:
+            log.error("Completed job but no video URL found. Raw response: %s", data)
+            raise AgnesError(f"Job completed but no video URL in response: {data}")
+        result["video_url"] = video_url
+
+    if status == "failed":
+        error_info = data.get("error") or {}
+        result["error"] = error_info.get("message", "unknown error")
+
+    return result
 
 def download_video(video_url: str, destination_path: str) -> str:
     """Downloads the finished video to a local file. Returns the local path."""

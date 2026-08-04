@@ -11,6 +11,8 @@ people use it at the same time. See README "Level it up" section for
 how to give each visitor their own agent using gr.State.
 """
 
+import re
+
 import gradio as gr
 
 from agent.agent import build_agent
@@ -21,6 +23,10 @@ log = get_logger(__name__)
 
 # Build the agent once when the app starts (not on every message).
 _agent = build_agent()
+
+# Matches "Video ready: outputs/videos/video_20260803_213501.mp4" so we
+# can pull the file path back out of the agent's final text answer.
+_VIDEO_PATH_RE = re.compile(r"([\w./\\-]+\.mp4)")
 
 
 def chat_fn(message: str, history):
@@ -37,11 +43,18 @@ def chat_fn(message: str, history):
 
     is_new_conversation = len(history) == 0
     try:
-        result = _agent.run(message, reset=is_new_conversation)
-        return str(result)
+        result = str(_agent.run(message, reset=is_new_conversation, max_steps=6))
     except Exception as exc:  # last-resort safety net for the UI layer
         log.exception("Unhandled error while running the agent")
         return f"Something went wrong: {exc}"
+
+    # If a video was actually generated, show it playing inline instead
+    # of just printing the file path as text.
+    match = _VIDEO_PATH_RE.search(result)
+    if match:
+        return gr.Video(value=match.group(1))
+
+    return result
 
 
 demo = gr.ChatInterface(

@@ -9,33 +9,37 @@ import time
 
 from config.settings import settings
 from services import agnes
-from services.exceptions import AgnesJobFailedError, AgnesTimeoutError
+from services.exceptions import AgnesJobFailedError, AgnesRateLimitError, AgnesTimeoutError
 from utils.helpers import timestamped_filename
 from utils.logger import get_logger
 
 log = get_logger(__name__)
 
 
-def poll_until_finished(task_id: str) -> str:
-    """
-    Polls the video API every `poll_interval_seconds` until the job is
-    "completed" or "failed", or until `poll_timeout_seconds` is reached.
-
-    Returns the local file path of the downloaded video.
-    """
+def poll_until_finished(video_id: str) -> str:
     started_at = time.monotonic()
+    wait_seconds = settings.poll_interval_seconds
 
     while True:
         elapsed = time.monotonic() - started_at
         if elapsed > settings.poll_timeout_seconds:
             raise AgnesTimeoutError(
-                f"Video job {task_id} did not finish within "
+                f"Video job {video_id} did not finish within "
                 f"{settings.poll_timeout_seconds} seconds."
             )
 
-        status_data = agnes.get_status(task_id)
+        try:
+            status_data = agnes.get_status(video_id)
+        except AgnesRateLimitError:
+            # Back off instead of failing the whole job: double the wait
+            # (capped at 30s) and try again.
+            wait_seconds = min(wait_seconds * 2, 30)
+            log.warning("Rate limited while polling, backing off to %ss", wait_seconds)
+            time.sleep(wait_seconds)
+            continue
+
         status = status_data.get("status")
-        log.info("Job %s status=%s (elapsed=%.0fs)", task_id, status, elapsed)
+        log.info("Job %s status=%s (elapsed=%.0fs)", video_id, status, elapsed)
 
         if status == "completed":
             video_url = status_data["video_url"]
@@ -45,9 +49,10 @@ def poll_until_finished(task_id: str) -> str:
 
         if status == "failed":
             raise AgnesJobFailedError(
-                f"Video job {task_id} failed on the provider's side: "
+                f"Video job {video_id} failed on the provider's side: "
                 f"{status_data.get('error', 'no reason given')}"
             )
 
-        # still pending / processing -> wait a bit before checking again
-        time.sleep(settings.poll_interval_seconds)
+        # reset backoff once a normal (non-429) response comes back
+        wait_seconds = settings.poll_interval_seconds
+        time.sleep(wait_seconds)
