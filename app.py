@@ -1,11 +1,14 @@
 """
-Entry point. Run with:  python app.py
-
-Keep this file tiny - it should only ever start the app, never
-contain real logic (that belongs in agent/, tools/, services/, ui/).
+Entry point. Run with: python app.py
 """
 
+import os
 import socket
+
+from dotenv import load_dotenv
+
+# Load .env before importing settings or modules that depend on it.
+load_dotenv()
 
 from config.settings import settings, validate_settings
 from ui.gradio_app import demo
@@ -15,7 +18,7 @@ log = get_logger(__name__)
 
 
 def _resolve_launch_port(preferred_port: int) -> int:
-    """Return the requested port when it is free, otherwise pick a free one."""
+    """Return the requested port when it is free, otherwise choose a free one."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind(("0.0.0.0", preferred_port))
@@ -30,17 +33,34 @@ def _resolve_launch_port(preferred_port: int) -> int:
 
 if __name__ == "__main__":
     problems = validate_settings()
+
     if problems:
         log.warning("Starting with missing configuration:")
-        for p in problems:
-            log.warning(" - %s", p)
-        log.warning("The app will run but the agent will fail until .env is filled in.")
+        for problem in problems:
+            log.warning(" - %s", problem)
 
-    launch_port = _resolve_launch_port(settings.gradio_server_port)
-    if launch_port != settings.gradio_server_port:
-        log.info("Port %s is busy; using %s instead.", settings.gradio_server_port, launch_port)
+    target_port = int(
+        os.environ.get(
+            "PORT",
+            settings.gradio_server_port,
+        )
+    )
+
+    launch_port = _resolve_launch_port(target_port)
+
+    if launch_port != target_port:
+        log.info(
+            "Port %s is busy; using %s instead.",
+            target_port,
+            launch_port,
+        )
+
+    server_name = os.environ.get(
+        "GRADIO_SERVER_NAME",
+        settings.gradio_server_name,
+    )
 
     demo.launch(
-        server_name=settings.gradio_server_name,
+        server_name=server_name,
         server_port=launch_port,
     )

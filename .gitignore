@@ -9,8 +9,11 @@ venv/
 
 # generated content
 outputs/videos/*.mp4
+outputs/videos/*/
+outputs/scripts/*.md
 logs/*.log
 
 # keep the folders in git even though their contents are ignored
 !outputs/videos/.gitkeep
+!outputs/scripts/.gitkeep
 !logs/.gitkeep

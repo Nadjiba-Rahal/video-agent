@@ -44,11 +44,10 @@ def test_poll_until_finished_job_failed():
 
 def test_poll_until_finished_timeout():
     # Always "processing" -> should eventually raise a timeout.
-    # `settings` is an immutable (frozen) dataclass, so we swap in a
-    # whole replacement object for the test instead of mutating a field.
-    from dataclasses import replace
-
-    fast_timeout_settings = replace(polling.settings, poll_timeout_seconds=0)
+    # `settings` is a pydantic-settings instance, so we swap in a
+    # copy with one field overridden for the test instead of mutating
+    # the shared global instance.
+    fast_timeout_settings = polling.settings.model_copy(update={"poll_timeout_seconds": 0})
 
     with patch("services.polling.agnes.get_status", return_value={"status": "processing"}), \
          patch("services.polling.time.sleep"), \

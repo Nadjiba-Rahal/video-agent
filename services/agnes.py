@@ -1,30 +1,30 @@
 """
-Pure API client for the video-generation provider ("agnes").
+Client for the video-generation provider ("Agnes").
 
-IMPORTANT: this file knows NOTHING about smolagents or the agent.
-It only knows how to talk HTTP to the video provider. Keeping it
-"pure" like this makes it easy to unit test and to swap providers
-later without touching the agent code.
+Provides both:
+  - low-level functions (`submit_video`, `get_status`, `download_video`)
+    used by `services/polling.py` for the single-clip `generate_video` tool
+  - the higher-level `AgnesService` class used by the per-scene cinematic
+    renderer (`pipeline/video_pipeline.py`)
 
-NOTE: The exact endpoint paths / JSON fields below are placeholders.
-Replace them with your real provider's API docs (submit / status /
-download). Everything else (polling, retries, error handling) will
-keep working as-is.
+Both paths share the same `poll_until_finished()` polling/backoff logic
+from `services/polling.py` (imported lazily below to avoid a circular
+import), so there is only one implementation of "wait for a video job
+to finish" in the whole project.
 """
+
+from __future__ import annotations
+
+from typing import Optional
 
 import requests
 
 from config.settings import settings
-from services.exceptions import (
-    AgnesAuthError,
-    AgnesError,
-    AgnesRateLimitError,
-)
+from services.exceptions import AgnesAuthError, AgnesError, AgnesRateLimitError
+from utils.helpers import nearest_valid_frame_count
 from utils.logger import get_logger
 
 log = get_logger(__name__)
-
-_TIMEOUT = 30  # seconds, for a single HTTP request (not the whole render)
 
 
 def _headers() -> dict:
@@ -35,7 +35,7 @@ def _headers() -> dict:
 
 
 def _raise_for_status(response: requests.Response) -> None:
-    """Turns HTTP error codes into our own clear exceptions."""
+    """Turns HTTP error codes into clear, typed exceptions."""
     if response.status_code in (401, 403):
         raise AgnesAuthError("Video API rejected the API key. Check AGNES_API_KEY.")
     if response.status_code == 429:
@@ -43,23 +43,25 @@ def _raise_for_status(response: requests.Response) -> None:
     if response.status_code >= 400:
         raise AgnesError(f"Video API error {response.status_code}: {response.text[:300]}")
 
+
 def submit_video(
     prompt: str,
-    negative_prompt: str = (
-        "blurry, low quality, distorted, watermark, text, glitch, "
-        "warped face, extra limbs, morphing, flickering, jump cuts, "
-        "objects appearing or disappearing, inconsistent details, "
-        "unnatural movement, jittery motion"
-    ),
+    negative_prompt: Optional[str] = None,
     num_frames: int = 121,
-    frame_rate: int = 24,
-    width: int = 1152,
-    height: int = 768,
-    num_inference_steps: int = 40,
-    seed: int | None = None,
+    frame_rate: Optional[int] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    num_inference_steps: Optional[int] = None,
+    seed: Optional[int] = None,
 ) -> str:
-    """Submits a video generation job. Returns a video_id for status checks."""
-    log.info("Submitting video job: %r", prompt[:80])
+    """Submits a video generation job. Returns a `video_id` for status checks."""
+    negative_prompt = negative_prompt if negative_prompt is not None else settings.agnes_negative_prompt
+    frame_rate = frame_rate or settings.agnes_frame_rate
+    width = width or settings.agnes_landscape_width
+    height = height or settings.agnes_landscape_height
+    num_inference_steps = num_inference_steps or settings.agnes_num_inference_steps
+
+    log.info("Submitting video job (%d frames): %r", num_frames, prompt[:80])
     payload = {
         "model": settings.agnes_model,
         "prompt": prompt,
@@ -78,7 +80,7 @@ def submit_video(
             f"{settings.agnes_api_url}/v1/videos",
             json=payload,
             headers=_headers(),
-            timeout=_TIMEOUT,
+            timeout=settings.agnes_http_timeout_seconds,
         )
     except requests.exceptions.RequestException as exc:
         raise AgnesError(f"Could not reach video API: {exc}") from exc
@@ -88,17 +90,15 @@ def submit_video(
     log.info("Video job submitted, video_id=%s", video_id)
     return video_id
 
+
 def get_status(video_id: str) -> dict:
-    """
-    Checks status. Returns a dict normalized to always have "status"
-    and, once completed, "video_url".
-    """
+    """Checks status. Returns a dict normalized with 'status' and 'video_url' when completed."""
     try:
         response = requests.get(
             f"{settings.agnes_api_url}/agnesapi",
             params={"video_id": video_id},
             headers=_headers(),
-            timeout=_TIMEOUT,
+            timeout=settings.agnes_http_timeout_seconds,
         )
     except requests.exceptions.RequestException as exc:
         raise AgnesError(f"Could not reach video API: {exc}") from exc
@@ -122,11 +122,12 @@ def get_status(video_id: str) -> dict:
 
     return result
 
+
 def download_video(video_url: str, destination_path: str) -> str:
     """Downloads the finished video to a local file. Returns the local path."""
     log.info("Downloading video to %s", destination_path)
     try:
-        response = requests.get(video_url, timeout=120, stream=True)
+        response = requests.get(video_url, timeout=settings.agnes_download_timeout_seconds, stream=True)
     except requests.exceptions.RequestException as exc:
         raise AgnesError(f"Could not download video: {exc}") from exc
 
@@ -138,3 +139,46 @@ def download_video(video_url: str, destination_path: str) -> str:
 
     log.info("Video saved to %s", destination_path)
     return destination_path
+
+
+class AgnesService:
+    """High-level "submit, wait, download" wrapper used by the per-scene
+    cinematic video pipeline.
+
+    Delegates the actual waiting to `services.polling.poll_until_finished`
+    (imported lazily to avoid a circular import) so there is a single,
+    shared implementation of polling/backoff behaviour, configured via
+    `settings.poll_interval_seconds` / `settings.poll_timeout_seconds`,
+    across both the single-clip tool and the multi-scene cinematic
+    pipeline.
+    """
+
+    def generate_video(
+        self,
+        prompt: str,
+        aspect_ratio: str = "16:9",
+        output_path: str = "output.mp4",
+        duration_seconds: float = 5.0,
+    ) -> str:
+        """Full cycle: submit -> poll until finished -> download.
+
+        `duration_seconds` is snapped to the nearest Agnes-supported
+        frame count via `utils.helpers.nearest_valid_frame_count`.
+        """
+        from services.polling import poll_until_finished  # local import: avoids circular import
+
+        width, height = settings.resolution_for(aspect_ratio)
+        num_frames = max(
+            nearest_valid_frame_count(duration_seconds, settings.agnes_frame_rate),
+            settings.agnes_min_frame_count,
+        )
+
+        video_id = submit_video(
+            prompt=prompt,
+            width=width,
+            height=height,
+            num_frames=num_frames,
+            frame_rate=settings.agnes_frame_rate,
+        )
+
+        return poll_until_finished(video_id, destination_path=output_path)

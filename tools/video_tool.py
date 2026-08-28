@@ -40,7 +40,7 @@ def generate_video(
             cinematic dolly zoom, moody low-key lighting,
             photorealistic film style".
         num_frames: Total frames. Must follow the 8n+1 rule (81, 121,
-            241, 441). Higher = longer video (max ~18s at 441/24).
+            241, 441). Higher = longer video (max ~60s at 441/24).
         frame_rate: Frames per second (1-60). Duration = num_frames / frame_rate.
         num_inference_steps: Higher = better quality but slower to render.
         seed: Set a fixed positive number to reproduce the same result

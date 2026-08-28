@@ -16,7 +16,15 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 
-def poll_until_finished(video_id: str) -> str:
+def poll_until_finished(video_id: str, destination_path: str | None = None) -> str:
+    """Waits for `video_id` to finish rendering, then downloads it.
+
+    By default the file is saved under settings.output_dir with an
+    auto-generated timestamped name (original behaviour). Pass an
+    explicit `destination_path` to control exactly where it lands -
+    used by pipeline/video_pipeline.py to save each scene as
+    clip_01.mp4, clip_02.mp4, ... inside a per-run folder.
+    """
     started_at = time.monotonic()
     wait_seconds = settings.poll_interval_seconds
 
@@ -43,9 +51,12 @@ def poll_until_finished(video_id: str) -> str:
 
         if status == "completed":
             video_url = status_data["video_url"]
-            os.makedirs(settings.output_dir, exist_ok=True)
-            local_path = os.path.join(settings.output_dir, timestamped_filename())
-            return agnes.download_video(video_url, local_path)
+            if destination_path is None:
+                os.makedirs(settings.output_dir, exist_ok=True)
+                destination_path = os.path.join(settings.output_dir, timestamped_filename())
+            else:
+                os.makedirs(os.path.dirname(destination_path) or ".", exist_ok=True)
+            return agnes.download_video(video_url, destination_path)
 
         if status == "failed":
             raise AgnesJobFailedError(

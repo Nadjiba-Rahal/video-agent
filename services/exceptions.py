@@ -24,3 +24,13 @@ class AgnesTimeoutError(AgnesError):
 
 class AgnesJobFailedError(AgnesError):
     """The video provider accepted the job but it failed while rendering."""
+
+
+class FFmpegError(Exception):
+    """Something went wrong invoking ffmpeg (missing binary, bad input, non-zero exit)."""
+
+
+class PlanningError(Exception):
+    """The Director or Storyboard agent could not produce a usable plan
+    (LLM call failed, or returned JSON that couldn't be parsed/validated
+    even after fallback attempts)."""
