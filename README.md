@@ -1,5 +1,13 @@
 # Agentic Video Assistant
 
+<p align="left">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/>
+  <img src="https://img.shields.io/badge/Gradio-F97316?style=flat-square&logo=gradio&logoColor=white" alt="Gradio"/>
+  <img src="https://img.shields.io/badge/Groq-LLM-F55036?style=flat-square" alt="Groq"/>
+  <img src="https://img.shields.io/badge/FFmpeg-007808?style=flat-square&logo=ffmpeg&logoColor=white" alt="FFmpeg"/>
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker"/>
+</p>
+
 Agentic Video Assistant turns a plain-language idea into a finished video. You describe what you want in the Gradio chat, and the app chooses the right workflow.
 
 It is designed for short creative videos, factual explainers, and cinematic multi-scene stories. The chat window keeps the conversation readable while generated videos stay inside a compact player.
