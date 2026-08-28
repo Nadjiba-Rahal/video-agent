@@ -1,0 +1,34 @@
+Create a [number]-scene cinematic video.
+
+Subject:
+Describe who or what we follow.
+
+Point of view:
+First-person, third-person, aerial, close-up, or wide shot.
+
+Scene 1:
+Describe one location, one action, camera movement, lighting, and mood.
+Duration: [4–10] seconds.
+
+Scene 2:
+Continue naturally from Scene 1.
+Describe one location, one action, camera movement, lighting, and mood.
+Duration: [4–10] seconds.
+
+Scene 3:
+Optional final scene with a clear ending.
+Duration: [4–10] seconds.
+
+Visual style:
+Describe the overall look.
+
+Pacing:
+Slow, calm, medium, or fast.
+
+Continuity:
+Keep the same person, clothing, camera style, color palette, and visual quality in every scene.
+
+Audio:
+Keep the natural audio from each generated scene.
+Add calm background music if the video service supports it.
+No narration.       
