@@ -23,6 +23,9 @@ log = get_logger(__name__)
 _VIDEO_PATH_RE = re.compile(
     r"([\w./\\-]+\.mp4)"
 )
+_FINAL_VIDEO_RE = re.compile(
+    r"([^\"\r\n]*final_movie\.mp4)"
+)
 
 _agent: Optional[Any] = None
 
@@ -114,7 +117,38 @@ def _run_cinematic_directly(
     return gr.Video(
         value=str(
             result.final_video_path
-        )
+        ),
+        height=360,
+        width=640,
+        show_label=False,
+    )
+
+
+def _recover_completed_video(exc: Exception) -> Any:
+    """Return a completed video when the agent fails after generation."""
+    match = _FINAL_VIDEO_RE.search(str(exc))
+    if not match:
+        return None
+
+    video_path = match.group(1).rstrip(" `'\\)")
+    if not video_path.lower().endswith("final_movie.mp4"):
+        return None
+
+    from pathlib import Path
+
+    if not Path(video_path).is_file():
+        return None
+
+    log.warning(
+        "Agent failed after cinematic generation; returning completed video: %s",
+        video_path,
+    )
+
+    return gr.Video(
+        value=video_path,
+        height=360,
+        width=640,
+        show_label=False,
     )
 
 
@@ -185,6 +219,10 @@ def chat_fn(
         log.exception(
             "Unhandled error while processing request"
         )
+
+        recovered_video = _recover_completed_video(exc)
+        if recovered_video is not None:
+            return recovered_video
 
         return (
             "Something went wrong: "
