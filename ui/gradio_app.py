@@ -71,23 +71,16 @@ def _looks_like_cinematic_request(
         "analog horror",
     )
 
-    explicit_video_words = (
-        "create a video",
-        "make a video",
-        "generate a video",
-        "create a cinematic",
-        "make a cinematic",
-        "generate a cinematic",
-    )
-
     has_cinematic_marker = any(
         marker in text
         for marker in cinematic_markers
     )
 
-    has_video_request = any(
-        marker in text
-        for marker in explicit_video_words
+    has_video_request = bool(
+        re.search(
+            r"\b(?:create|make|generate)\b.{0,60}\bvideo\b",
+            text,
+        )
     )
 
     return (
