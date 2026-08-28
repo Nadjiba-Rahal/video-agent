@@ -124,6 +124,43 @@ def _probe_duration(
         return 0.0
 
 
+def _has_audio_stream(
+    path: Path,
+) -> bool:
+    ffprobe = (
+        shutil.which("ffprobe")
+        or "ffprobe"
+    )
+
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=index",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        return bool(result.stdout.strip())
+    except Exception as exc:
+        logger.warning(
+            "Could not inspect audio stream in %s: %s",
+            path,
+            exc,
+        )
+        return False
+
+
 def concatenate(
     clip_paths: Iterable[Path],
     output_path: Path,
@@ -572,7 +609,7 @@ class FFmpegService:
                     ""
                 )
 
-            # Add only actual audio files as inputs.
+            # Add narration files and source clips that contain audio.
             final_cmd = [
                 self.binary,
                 "-y",
@@ -580,10 +617,12 @@ class FFmpegService:
                 str(temp_video),
             ]
 
-            for voice_path in (
-                aligned_voice_paths[
-                    :len(durations)
-                ]
+            voice_input_indices: dict[int, int] = {}
+            source_audio_input_indices: dict[int, int] = {}
+            next_input_index = 1
+
+            for scene_index, voice_path in enumerate(
+                aligned_voice_paths[:len(durations)]
             ):
 
                 if (
@@ -592,21 +631,33 @@ class FFmpegService:
                         voice_path
                     ).exists()
                 ):
+                    voice_input_indices[scene_index] = next_input_index
                     final_cmd.extend(
                         [
                             "-i",
                             str(voice_path),
                         ]
                     )
+                    next_input_index += 1
+
+            for scene_index, video_path in enumerate(
+                valid_videos[:len(durations)]
+            ):
+                if _has_audio_stream(video_path):
+                    source_audio_input_indices[scene_index] = next_input_index
+                    final_cmd.extend(
+                        [
+                            "-i",
+                            str(video_path),
+                        ]
+                    )
+                    next_input_index += 1
 
             filter_parts: list[str] = []
 
             audio_labels: list[str] = []
 
             # Input index 0 = video.
-            # Voice inputs start at 1.
-            next_voice_input = 1
-
             for scene_index, (
                 voice_path,
                 duration,
@@ -629,18 +680,23 @@ class FFmpegService:
                 ):
 
                     _normalise_scene_audio(
-                        next_voice_input,
+                        voice_input_indices[scene_index],
                         duration,
                         label,
                         filter_parts,
                     )
 
-                    next_voice_input += 1
+                elif scene_index in source_audio_input_indices:
+                    _normalise_scene_audio(
+                        source_audio_input_indices[scene_index],
+                        duration,
+                        label,
+                        filter_parts,
+                    )
 
                 else:
 
-                    # No narration for this scene:
-                    # explicit silence.
+                    # No narration or source audio for this scene.
                     filter_parts.append(
                         "anullsrc="
                         "r=44100:"
