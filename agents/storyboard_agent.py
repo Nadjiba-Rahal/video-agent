@@ -8,6 +8,7 @@ scene list suitable for the video-generation pipeline.
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from agents.director_agent import DirectorBrief
@@ -95,6 +96,18 @@ class StoryboardAgent:
             "Storyboard Agent generating %s scene(s).",
             expected_count,
         )
+
+        structured_data = self._parse_structured_prompt(
+            user_prompt,
+            brief,
+        )
+        if structured_data is not None:
+            log.info("Using local Storyboard parsing for structured prompt.")
+            return self._build_storyboard(
+                data=structured_data,
+                brief=brief,
+                source_prompt=user_prompt,
+            )
 
         durations = (
             brief.scene_durations_seconds
@@ -196,6 +209,69 @@ Return only JSON.
                 "Could not build storyboard: "
                 f"{exc}"
             ) from exc
+
+    @staticmethod
+    def _parse_structured_prompt(
+        user_prompt: str,
+        brief: DirectorBrief,
+    ) -> Optional[dict]:
+        """Build a storyboard without an LLM when scene fields are explicit."""
+        if not re.search(r"^\s*SCENES\s*$", user_prompt, re.IGNORECASE | re.MULTILINE):
+            return None
+
+        scene_matches = list(re.finditer(
+            r"^\s*Scene\s+(\d+)\s*-\s*(.*?)\s*$([\s\S]*?)(?=^\s*Scene\s+\d+\s*-\s|^\s*CONTINUITY RULES\b|\Z)",
+            user_prompt,
+            re.IGNORECASE | re.MULTILINE,
+        ))
+        if len(scene_matches) != brief.scene_count:
+            return None
+
+        scenes = []
+        for match in scene_matches:
+            body = match.group(3)
+            action_match = re.search(
+                r"^\s*Action\s*:\s*(.*?)(?=^\s*(?:Mood|Duration)\s*:|\Z)",
+                body,
+                re.IGNORECASE | re.MULTILINE | re.DOTALL,
+            )
+            mood_match = re.search(
+                r"^\s*Mood\s*:\s*(.*?)\s*$",
+                body,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            duration_match = re.search(
+                r"^\s*Duration\s*:\s*(\d+(?:\.\d+)?)\s*seconds?\s*$",
+                body,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            if not action_match or not duration_match:
+                return None
+
+            scenes.append({
+                "scene_id": int(match.group(1)),
+                "title": " ".join(match.group(2).split()),
+                "video_prompt": " ".join(action_match.group(1).split()),
+                "duration_seconds": float(duration_match.group(1)),
+                "mood": (
+                    " ".join(mood_match.group(1).split())
+                    if mood_match
+                    else brief.tone
+                ),
+                "visual_style": brief.style,
+                "camera_shot": "cinematic shot",
+                "camera_motion": "as specified in the camera lock",
+                "sound_effects": [],
+                "transition": "seamless continuation",
+            })
+
+        return {
+            "title": "Structured cinematic sequence",
+            "logline": "A continuous cinematic sequence.",
+            "character_anchor": brief.character_anchor,
+            "environment_anchor": brief.environment_anchor,
+            "scenes": scenes,
+        }
 
     @staticmethod
     def _build_storyboard(

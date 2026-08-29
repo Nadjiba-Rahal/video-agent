@@ -6,6 +6,7 @@ after a timeout, instead of hanging forever.
 
 import os
 import time
+from collections.abc import Callable
 
 from config.settings import settings
 from services import agnes
@@ -16,7 +17,12 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 
-def poll_until_finished(video_id: str, destination_path: str | None = None) -> str:
+def poll_until_finished(
+    video_id: str,
+    destination_path: str | None = None,
+    progress_callback: Callable[[float], None] | None = None,
+    estimated_seconds: float | None = None,
+) -> str:
     """Waits for `video_id` to finish rendering, then downloads it.
 
     By default the file is saved under settings.output_dir with an
@@ -49,7 +55,13 @@ def poll_until_finished(video_id: str, destination_path: str | None = None) -> s
         status = status_data.get("status")
         log.info("Job %s status=%s (elapsed=%.0fs)", video_id, status, elapsed)
 
+        if progress_callback is not None and status != "completed":
+            estimate = max(10.0, estimated_seconds or settings.poll_timeout_seconds)
+            progress_callback(min(95.0, elapsed / estimate * 100))
+
         if status == "completed":
+            if progress_callback is not None:
+                progress_callback(100.0)
             video_url = status_data["video_url"]
             if destination_path is None:
                 os.makedirs(settings.output_dir, exist_ok=True)

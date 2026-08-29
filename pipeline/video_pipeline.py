@@ -135,6 +135,12 @@ class ParallelVideoPipeline:
             scene.duration_seconds,
         )
 
+        def show_scene_progress(percent: float) -> None:
+            _show_scene_progress(
+                scene_id,
+                percent,
+            )
+
         max_retries = settings.scene_render_max_retries
         base_backoff = settings.scene_render_backoff_base_seconds
 
@@ -145,6 +151,7 @@ class ParallelVideoPipeline:
                     aspect_ratio=aspect_ratio,
                     output_path=str(out_path),
                     duration_seconds=scene.duration_seconds,
+                    progress_callback=show_scene_progress,
                 )
 
                 actual_duration = _probe_video_duration(video_file)
@@ -278,6 +285,19 @@ class ParallelVideoPipeline:
             for scene in storyboard.scenes
             if results.get(str(scene.scene_id))
         ]
+
+
+def _show_scene_progress(scene_id: str, percent: float) -> None:
+    """Show estimated progress for the scene currently being rendered."""
+    bounded = max(0.0, min(100.0, percent))
+    filled = int(bounded / 5)
+    bar = "=" * filled + "." * (20 - filled)
+    sys.stdout.write(
+        f"\rScene {scene_id} [{bar}] {bounded:5.1f}%"
+    )
+    sys.stdout.flush()
+    if bounded >= 100:
+        sys.stdout.write("\n")
 
 
 def generate_clips(
