@@ -15,9 +15,11 @@ to finish" in the whole project.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Optional
 
 import requests
+import time
 
 from config.settings import settings
 from services.exceptions import AgnesAuthError, AgnesError, AgnesRateLimitError
@@ -126,19 +128,56 @@ def get_status(video_id: str) -> dict:
 def download_video(video_url: str, destination_path: str) -> str:
     """Downloads the finished video to a local file. Returns the local path."""
     log.info("Downloading video to %s", destination_path)
-    try:
-        response = requests.get(video_url, timeout=settings.agnes_download_timeout_seconds, stream=True)
-    except requests.exceptions.RequestException as exc:
-        raise AgnesError(f"Could not download video: {exc}") from exc
 
-    _raise_for_status(response)
+    partial_path = f"{destination_path}.part"
+    max_attempts = max(1, settings.agnes_download_max_retries)
 
-    with open(destination_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = requests.get(
+                video_url,
+                timeout=settings.agnes_download_timeout_seconds,
+                stream=True,
+            )
+            _raise_for_status(response)
 
-    log.info("Video saved to %s", destination_path)
-    return destination_path
+            with open(partial_path, "wb") as output_file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        output_file.write(chunk)
+
+            os.replace(partial_path, destination_path)
+            log.info("Video saved to %s", destination_path)
+            return destination_path
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            try:
+                os.remove(partial_path)
+            except FileNotFoundError:
+                pass
+
+            if attempt == max_attempts:
+                raise AgnesError(
+                    f"Could not download video after {max_attempts} attempts: {exc}"
+                ) from exc
+
+            wait_seconds = min(15, 2 ** (attempt - 1))
+            log.warning(
+                "Temporary video download failure (attempt %s/%s); retrying in %ss.",
+                attempt,
+                max_attempts,
+                wait_seconds,
+            )
+            time.sleep(wait_seconds)
+
+        except requests.exceptions.RequestException as exc:
+            try:
+                os.remove(partial_path)
+            except FileNotFoundError:
+                pass
+            raise AgnesError(f"Could not download video: {exc}") from exc
+
+    raise AgnesError("Could not download video.")
 
 
 class AgnesService:
@@ -159,6 +198,7 @@ class AgnesService:
         aspect_ratio: str = "16:9",
         output_path: str = "output.mp4",
         duration_seconds: float = 5.0,
+        progress_callback: Callable[[float], None] | None = None,
     ) -> str:
         """Full cycle: submit -> poll until finished -> download.
 
@@ -181,4 +221,9 @@ class AgnesService:
             frame_rate=settings.agnes_frame_rate,
         )
 
-        return poll_until_finished(video_id, destination_path=output_path)
+        return poll_until_finished(
+            video_id,
+            destination_path=output_path,
+            progress_callback=progress_callback,
+            estimated_seconds=max(30.0, duration_seconds * 12.0),
+        )

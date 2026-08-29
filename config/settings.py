@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     agnes_model: str = Field(default="agnes-video-v2.0")
     agnes_http_timeout_seconds: int = Field(default=30, description="Timeout for a single Agnes HTTP call.")
     agnes_download_timeout_seconds: int = Field(default=120, description="Timeout for downloading a finished video.")
+    agnes_download_max_retries: int = Field(default=3, description="Retries for temporary output-download network failures.")
 
     agnes_negative_prompt: str = Field(
         default=(
