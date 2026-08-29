@@ -18,6 +18,19 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Return whether the provider rejected the request for quota reasons."""
+    text = str(exc).lower()
+    return (
+        "rate limit" in text
+        or "ratelimit" in text
+        or "too many requests" in text
+        or "tokens per minute" in text
+        or "rate_limit_exceeded" in text
+        or "429" in text
+    )
+
+
 def complete_json(
     *,
     model_id: str,
@@ -54,7 +67,8 @@ def complete_json(
         )
 
         # Ask providers that support it to constrain the response to JSON.
-        # If a provider rejects this option, retry once without it.
+        # If a provider rejects this option, retry with an explicit JSON-only
+        # system instruction so the fallback still has a reliable contract.
         try:
             response = litellm.completion(
                 **kwargs,
@@ -65,6 +79,12 @@ def complete_json(
 
         except Exception as json_mode_error:
 
+            if _is_rate_limit_error(json_mode_error):
+                raise PlanningError(
+                    f"{agent_name} hit the model rate limit. "
+                    "Wait a few seconds and try again."
+                ) from json_mode_error
+
             log.warning(
                 "%s JSON response_format was rejected; "
                 "retrying without response_format: %s",
@@ -72,17 +92,30 @@ def complete_json(
                 json_mode_error,
             )
 
-            response = litellm.completion(
-                **kwargs
-            )
+            fallback_kwargs = dict(kwargs)
+            fallback_kwargs["temperature"] = 0
+            fallback_kwargs["messages"] = [
+                {
+                    "role": "system",
+                    "content": (
+                        f"{system_prompt}\n\n"
+                        "Output exactly one complete valid JSON object. "
+                        "Do not output Markdown, comments, or explanations."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ]
+            response = litellm.completion(**fallback_kwargs)
 
-        raw_text = (
-            response["choices"][0]["message"]["content"]
-        )
+        raw_text = response["choices"][0]["message"].get("content")
 
         if not raw_text:
             raise PlanningError(
-                f"{agent_name} returned an empty response."
+                f"{agent_name} returned no JSON. "
+                "The model may have reached its output limit; try fewer scenes."
             )
 
         log.info(

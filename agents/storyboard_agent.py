@@ -39,7 +39,7 @@ RULES:
 - Preserve important transitions.
 - No narration when narration is disabled.
 - Do not invent dialogue, text, logos, or people if prohibited.
-- Keep video_prompt between 35 and 65 words.
+- Keep video_prompt between 18 and 30 words.
 - Keep sound effects very short.
 - Keep transition very short.
 - Do not explain anything.
@@ -53,6 +53,8 @@ JSON:
 {
   "title": "short title",
   "logline": "short sentence",
+    "character_anchor": "fixed character identity, clothing, age, and distinctive features",
+    "environment_anchor": "fixed world, location, time, and recurring environmental details",
   "scenes": [
     {
       "scene_id": 1,
@@ -140,9 +142,23 @@ MUSIC:
 DIRECTOR NOTES:
 {brief.notes}
 
+CHARACTER LOCK:
+{brief.character_anchor}
+
+WORLD LOCK:
+{brief.environment_anchor}
+
+ORIGINAL STRUCTURED REQUEST:
+{user_prompt}
+
 REMEMBER:
 Exactly {expected_count} scene objects.
 Keep every video_prompt short.
+First define character_anchor and environment_anchor, then repeat those exact
+details in every video_prompt. Do not change the character, clothing, setting,
+lighting language, color palette, lens, or visual style between scenes.
+Each scene must begin from the previous scene's final physical state and end
+in a state that the next scene can continue from.
 Return only JSON.
 """
 
@@ -153,7 +169,7 @@ Return only JSON.
                 system_prompt=_SYSTEM_PROMPT,
                 user_prompt=compact_prompt,
                 temperature=0.1,
-                max_tokens=1600,
+                max_tokens=min(1500, max(900, expected_count * 210)),
                 agent_name="Storyboard Agent",
             )
 
@@ -273,6 +289,30 @@ Return only JSON.
 
         normalized = []
 
+        character_anchor = str(
+            brief.character_anchor or data.get("character_anchor") or ""
+        ).strip()
+        environment_anchor = str(
+            brief.environment_anchor or data.get("environment_anchor") or brief.style or ""
+        ).strip()
+
+        continuity_prefix = " ".join(
+            part
+            for part in (
+                f"CONTINUITY CHARACTER: {character_anchor}."
+                if character_anchor
+                else "",
+                f"CONTINUITY ENVIRONMENT: {environment_anchor}."
+                if environment_anchor
+                else "",
+                f"VISUAL STYLE: {brief.style}." if brief.style else "",
+                f"TONE: {brief.tone}." if brief.tone else "",
+                "Continue directly from the previous scene's final state; "
+                "keep the same character identity, clothing, environment, "
+                "lighting, lens, color palette, and visual style.",
+            )
+        )
+
         for index, raw_scene in enumerate(
             scenes
         ):
@@ -302,6 +342,10 @@ Return only JSON.
                 "seamlessly while preserving the "
                 "established visual style and camera movement.",
             )
+
+            scene["video_prompt"] = (
+                f"{continuity_prefix} {scene['video_prompt']}"
+            ).strip()
 
             # -----------------------------------------------------
             # Duration
@@ -395,6 +439,9 @@ Return only JSON.
         normalized_data[
             "scenes"
         ] = normalized
+
+        normalized_data["character_anchor"] = character_anchor
+        normalized_data["environment_anchor"] = environment_anchor
 
         normalized_data[
             "narration_enabled"

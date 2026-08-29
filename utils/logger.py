@@ -30,6 +30,7 @@ _file_handler.setFormatter(_formatter)
 
 _console_handler = logging.StreamHandler()
 _console_handler.setFormatter(_formatter)
+_console_handler.setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:

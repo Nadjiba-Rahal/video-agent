@@ -1,34 +1,49 @@
 Create a [number]-scene cinematic video.
 
-Subject:
-Describe who or what we follow.
+SUBJECT
+[Who or what we follow.]
 
-Point of view:
-First-person, third-person, aerial, close-up, or wide shot.
+CAMERA
+[Point of view, shot type, and camera movement.]
 
-Scene 1:
-Describe one location, one action, camera movement, lighting, and mood.
-Duration: [4–10] seconds.
+CHARACTER LOCK
+[Age, appearance, clothing, props, and distinctive features. Repeat exactly
+in every scene. Write "none" if there is no character.]
+
+WORLD LOCK
+[Location, time of day, weather, lighting, color palette, lens, and visual
+style. Keep exactly the same in every scene.]
+
+SCENES
+
+Scene 1 - [short title]
+Action: [One clear action in one location.]
+Mood: [mood]
+Duration: [4-10] seconds
 
 Scene 2:
-Continue naturally from Scene 1.
-Describe one location, one action, camera movement, lighting, and mood.
-Duration: [4–10] seconds.
+Scene 2 - [short title]
+Action: [Continue directly from Scene 1. One clear action in one location.]
+Mood: [mood]
+Duration: [4-10] seconds
 
 Scene 3:
-Optional final scene with a clear ending.
-Duration: [4–10] seconds.
+Scene 3 - [short title]
+Action: [Continue directly from Scene 2 and give the story a clear ending.]
+Mood: [mood]
+Duration: [4-10] seconds
 
-Visual style:
-Describe the overall look.
+CONTINUITY RULES
+Keep the same character identity, clothing, props, world, lighting, lens,
+camera style, color palette, and visual quality in every scene. Start each
+scene from the previous scene's final physical state. Do not add new people,
+objects, locations, text, logos, or dialogue unless specified above.
 
-Pacing:
-Slow, calm, medium, or fast.
+AUDIO
+Natural sound: [specific sounds or "none"]
+Music: [none, calm, tense, or other]
+Narration: [none or exact narration]
 
-Continuity:
-Keep the same person, clothing, camera style, color palette, and visual quality in every scene.
-
-Audio:
-Keep the natural audio from each generated scene.
-Add calm background music if the video service supports it.
-No narration.       
+NEGATIVE
+[blurry, flickering, changing face, changing clothes, extra limbs, text,
+watermark, jump cuts, distorted objects]

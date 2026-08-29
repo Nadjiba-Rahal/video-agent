@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import re
 from typing import Any, Optional
 
 from config.settings import settings
@@ -12,7 +13,7 @@ log = get_logger(__name__)
 
 _SYSTEM_PROMPT = """You are a Director Agent for a cinematic video pipeline.
 
-Return ONLY valid JSON.
+Return ONLY valid JSON. Keep every value extremely short.
 
 Extract the user's requirements:
 - style
@@ -21,7 +22,7 @@ Extract the user's requirements:
 - scene count
 - scene durations
 - narration/music
-- important visual or continuity notes
+- important visual or continuity notes, in 8 words or fewer
 
 Preserve explicit scene counts and durations exactly.
 If no durations are given, use equal durations.
@@ -54,6 +55,8 @@ class DirectorBrief:
     scene_durations_seconds: list[float] | None = None
 
     notes: str = ""
+    character_anchor: str = ""
+    environment_anchor: str = ""
 
     @property
     def total_duration_seconds(self) -> float:
@@ -93,6 +96,11 @@ class DirectorAgent:
         user_prompt: str,
     ) -> DirectorBrief:
 
+        structured_brief = self._parse_structured_prompt(user_prompt)
+        if structured_brief is not None:
+            log.info("Using local Director parsing for structured prompt.")
+            return structured_brief
+
         log.info(
             "Director Agent planning for prompt: %r",
             user_prompt[:80],
@@ -108,11 +116,111 @@ class DirectorAgent:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=0.2,
-            max_tokens=1000,
+            max_tokens=450,
             agent_name="Director Agent",
         )
 
         return self._to_brief(data)
+
+    @staticmethod
+    def _parse_structured_prompt(
+        user_prompt: str,
+    ) -> Optional[DirectorBrief]:
+        """Extract the cheap, explicit fields from the prompt template."""
+        count_match = re.search(
+            r"create\s+a\s+(\d+)\s*-\s*scene\s+cinematic\s+video",
+            user_prompt,
+            re.IGNORECASE,
+        )
+        if not count_match:
+            return None
+
+        scene_count = int(count_match.group(1))
+        duration_values = [
+            float(value)
+            for value in re.findall(
+                r"duration\s*:\s*(\d+(?:\.\d+)?)\s*seconds",
+                user_prompt,
+                re.IGNORECASE,
+            )
+        ]
+        if len(duration_values) != scene_count:
+            duration_values = []
+
+        style_match = re.search(
+            r"(?:visual style|world lock)\s*:?\s*(.*?)(?=\n\s*(?:scenes|pacing|continuity rules|audio|negative)\b|\Z)",
+            user_prompt,
+            re.IGNORECASE | re.DOTALL,
+        )
+        style = "cinematic"
+        if style_match:
+            style = " ".join(style_match.group(1).split())[:300]
+
+        character_match = re.search(
+            r"(?:character lock|character continuity)\s*:?\s*(.*?)(?=\n\s*(?:world lock|environment continuity|scenes)\b|\Z)",
+            user_prompt,
+            re.IGNORECASE | re.DOTALL,
+        )
+        environment_match = re.search(
+            r"(?:world lock|environment continuity)\s*:?\s*(.*?)(?=\n\s*scenes\b|\Z)",
+            user_prompt,
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        character_anchor = (
+            " ".join(character_match.group(1).split())[:500]
+            if character_match
+            else ""
+        )
+        environment_anchor = (
+            " ".join(environment_match.group(1).split())[:500]
+            if environment_match
+            else ""
+        )
+
+        pacing_match = re.search(
+            r"pacing\s*:?\s*(.*?)(?=\n\s*(?:continuity rules|audio|negative)\b|\Z)",
+            user_prompt,
+            re.IGNORECASE | re.DOTALL,
+        )
+        pacing = "medium"
+        if pacing_match:
+            pacing = " ".join(pacing_match.group(1).split())[:80]
+
+        narration_match = re.search(
+            r"narration\s*:\s*(.*)",
+            user_prompt,
+            re.IGNORECASE,
+        )
+        music_match = re.search(
+            r"music\s*:\s*(.*)",
+            user_prompt,
+            re.IGNORECASE,
+        )
+
+        return DirectorBrief(
+            style=style,
+            tone="cinematic",
+            pacing=pacing,
+            scene_count=max(1, min(scene_count, settings.max_scenes)),
+            scene_duration_seconds=(
+                duration_values[0]
+                if duration_values
+                else settings.default_scene_duration_seconds
+            ),
+            scene_durations_seconds=duration_values or None,
+            narration_enabled=not (
+                narration_match
+                and narration_match.group(1).strip().lower() == "none"
+            ),
+            music_enabled=not (
+                music_match
+                and music_match.group(1).strip().lower() == "none"
+            ),
+            notes="Use the original structured prompt for all scene details.",
+            character_anchor=character_anchor,
+            environment_anchor=environment_anchor,
+        )
 
     @staticmethod
     def _to_brief(

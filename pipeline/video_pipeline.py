@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import shutil
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -23,6 +24,24 @@ from services.agnes import AgnesService
 from utils.logger import get_logger
 
 log = get_logger(__name__)
+
+
+def _show_render_progress(
+    completed: int,
+    total: int,
+    scene_id: str = "",
+) -> None:
+    """Show one compact terminal line for scene-render progress."""
+    percent = int(completed / total * 100) if total else 100
+    filled = int(percent / 5)
+    bar = "=" * filled + "." * (20 - filled)
+    finished = f" | scene {scene_id} done" if scene_id else ""
+    sys.stdout.write(
+        f"\rScenes [{bar}] {percent:3d}% ({completed}/{total}){finished}"
+    )
+    sys.stdout.flush()
+    if completed >= total:
+        sys.stdout.write("\n")
 
 
 def _probe_video_duration(path: str) -> float:
@@ -197,6 +216,10 @@ class ParallelVideoPipeline:
         )
 
         results: dict[str, str] = {}
+        total_scenes = len(storyboard.scenes)
+        completed_scenes = 0
+
+        _show_render_progress(0, total_scenes)
 
         with ThreadPoolExecutor(
             max_workers=self.max_workers
@@ -242,6 +265,13 @@ class ParallelVideoPipeline:
                     results[
                         str(scene.scene_id)
                     ] = ""
+
+                completed_scenes += 1
+                _show_render_progress(
+                    completed_scenes,
+                    total_scenes,
+                    str(scene.scene_id),
+                )
 
         return [
             results[str(scene.scene_id)]

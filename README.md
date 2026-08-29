@@ -23,11 +23,14 @@ flowchart TD
     E --> F[Improve the video prompt]
     F --> G[Send one render job to Agnes]
     G --> H[Poll and download the video]
-    D --> I[Director Agent plans the film]
-    I --> J[Storyboard Agent writes each scene]
-    J --> K[Render each scene]
-    K --> L[Add narration and compose with FFmpeg]
-    L --> H
+    D --> I{Structured prompt?}
+    I -->|Yes| J[Read scene locks locally]
+    I -->|No| K[Director Agent plans the film]
+    J --> L[Storyboard Agent writes each scene]
+    K --> L
+    L --> M[Render each scene]
+    M --> N[Add narration and compose with FFmpeg]
+    N --> H
     H --> M[Video appears in the chat]
 ```
 
@@ -39,7 +42,7 @@ Use this for one subject, one action, or a short explainer. The general agent ca
 
 ### Cinematic
 
-Use this for a story, a short film, a storyboard, or several scenes. The Director Agent chooses the structure. The Storyboard Agent turns it into scene prompts, narration, transitions, and sound suggestions. Each scene is rendered, narration is created, and FFmpeg assembles the final video.
+Use this for a story, a short film, a storyboard, or several scenes. A prompt that follows `prompt-layout.txt` is parsed locally for its scene count, durations, and continuity locks, saving one LLM request. Other prompts use the Director Agent. The Storyboard Agent turns the request into scene prompts, narration, transitions, and sound suggestions. Each scene is rendered, narration is created, and FFmpeg assembles the final video.
 
 ```mermaid
 sequenceDiagram
@@ -67,22 +70,34 @@ The project needs Python, FFmpeg, an LLM provider key, and credentials for the A
 1. Open the project folder in VS Code.
 2. Create a virtual environment named `.venv` with Python 3.11 or 3.13. Python 3.14 is not supported by the current Gradio audio dependencies.
 3. Install the dependencies listed in `requirements.txt`.
-4. Copy `.env.example` to `.env`.
-5. Add your provider credentials to `.env`.
-6. Start `app.py` with the Python executable inside `.venv`.
-7. Open the local address printed by Gradio, normally `http://localhost:7860`.
+4. Copy `.env.example` to `.env` and add your provider credentials.
+5. Start the app on Windows:
+
+    ```powershell
+    .\.venv\Scripts\python app.py
+    ```
+
+6. Open the local address printed by Gradio, normally `http://localhost:7860`.
 
 The app also chooses another free port when the default port is busy.
 
+The terminal shows a compact scene-render progress bar. Detailed logs remain
+in `logs/YYYY-MM-DD.log`.
+
 ## Configuration
 
-The current working Groq setup uses the `openai/gpt-oss-20b` model exposed through Groq. The model name belongs in `MODEL_ID`; the Groq secret belongs in `MODEL_API_KEY` and `GROQ_API_KEY`.
+The default Groq setup uses the `openai/gpt-oss-20b` model. The model name belongs in `MODEL_ID`; the Groq secret belongs in `MODEL_API_KEY` and `GROQ_API_KEY`.
 
 The Director and Storyboard agents normally use the same model. Their optional model settings can override it independently.
 
 The video service needs `AGNES_API_URL`, `AGNES_API_KEY`, and `AGNES_MODEL`. Keep all secrets in `.env`. Never commit `.env`, paste keys into issues, or include keys in screenshots. If a key is exposed, revoke it and create a replacement immediately.
 
 Search does not need an API key. FFmpeg must be installed and available on your PATH when running locally; the Docker image installs it automatically.
+
+Groq's free tier has a tokens-per-minute limit. Use 3 to 4 scenes for the most
+reliable planning. Structured prompts save the Director request, but the
+Storyboard request and Agnes video generation still use external service
+quotas.
 
 ## Project map
 
@@ -122,9 +137,23 @@ Each run receives a timestamped folder under `outputs/videos/`. It can contain t
 
 The test suite covers configuration, JSON parsing, models, polling, FFmpeg behavior, and startup error handling. Run it after changing dependencies or pipeline logic. Tests use mocks and do not consume LLM or video credits.
 
-## Deployment
+## Free public access
 
-The included Dockerfile provides Python, FFmpeg, and the application dependencies. Railway and Render can build it from GitHub. Add the same environment variables in the host's secret settings, including the runtime `PORT` supplied by the platform.
+The app is a long-running Python/Gradio process and is not a good fit for
+Vercel serverless functions. For zero hosting cost, run it on your own
+computer and use a temporary Cloudflare Tunnel:
+
+```powershell
+\.\cloudflared.exe tunnel --url http://localhost:7860
+```
+
+Cloudflare prints a public `trycloudflare.com` URL. Keep both the app and
+tunnel running; your computer must stay on. This does not make the external
+LLM or video-service APIs free.
+
+For container hosting, the included Dockerfile provides Python, FFmpeg, and
+the application dependencies. Add the environment variables in the host's
+secret settings, including the runtime `PORT` supplied by the platform.
 
 Do not upload `.env` to GitHub. Only publish `.env.example` with blank placeholder values.
 
