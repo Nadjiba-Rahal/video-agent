@@ -16,6 +16,7 @@ to finish" in the whole project.
 from __future__ import annotations
 
 from collections.abc import Callable
+import os
 from typing import Optional
 
 import requests

@@ -30,14 +30,15 @@ def _show_render_progress(
     completed: int,
     total: int,
     scene_id: str = "",
+    result: str = "done",
 ) -> None:
     """Show one compact terminal line for scene-render progress."""
     percent = int(completed / total * 100) if total else 100
     filled = int(percent / 5)
     bar = "=" * filled + "." * (20 - filled)
-    finished = f" | scene {scene_id} done" if scene_id else ""
+    finished = f" | scene {scene_id} {result}" if scene_id else ""
     sys.stdout.write(
-        f"\rScenes [{bar}] {percent:3d}% ({completed}/{total}){finished}"
+        f"\r\033[KScenes [{bar}] {percent:3d}% ({completed}/{total}){finished}"
     )
     sys.stdout.flush()
     if completed >= total:
@@ -273,11 +274,17 @@ class ParallelVideoPipeline:
                         str(scene.scene_id)
                     ] = ""
 
+                    result_status = "failed"
+
+                else:
+                    result_status = "done"
+
                 completed_scenes += 1
                 _show_render_progress(
                     completed_scenes,
                     total_scenes,
                     str(scene.scene_id),
+                    result_status,
                 )
 
         return [
@@ -293,7 +300,7 @@ def _show_scene_progress(scene_id: str, percent: float) -> None:
     filled = int(bounded / 5)
     bar = "=" * filled + "." * (20 - filled)
     sys.stdout.write(
-        f"\rScene {scene_id} [{bar}] {bounded:5.1f}%"
+        f"\r\033[KScene {scene_id} [{bar}] {bounded:5.1f}%"
     )
     sys.stdout.flush()
     if bounded >= 100:
